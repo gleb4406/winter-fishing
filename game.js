@@ -25,6 +25,93 @@ const images = {
 
 let W, H, HOLE_CX, HOLE_CY, HOLE_RX, HOLE_RY;
 let backgroundRect = { x: 0, y: 0, w: 0, h: 0 };
+let backgroundDraw = { dx: 0, dy: 0, dw: 0, dh: 0, iw: 1, ih: 1 };
+
+// Привязка к ПИКСЕЛЯМ фона (в координатах background.png).
+// Подправь эти значения под свою картинку:
+// - floatPx: центр поплавка (примерно центр лунки)
+// - rodTipPx: точка, где леска выходит из удочки (должна совпасть с floatPx)
+const backgroundAnchors = {
+  // если фон ещё не загрузился, используются относительные доли
+  fallbackU: 0.5,
+  fallbackV: 0.52,
+
+  // будут инициализированы по факту размеров изображения (если null)
+  floatPx: null,   // { x, y } в пикселях background.png
+  rodTipPx: null,  // { x, y } в пикселях background.png
+};
+
+// Сохраняем калибровку в браузере
+const ANCHORS_KEY = "winterFishingAnchorsV1";
+try {
+  const saved = localStorage.getItem(ANCHORS_KEY);
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    if (parsed?.floatPx?.x != null && parsed?.floatPx?.y != null) backgroundAnchors.floatPx = parsed.floatPx;
+    if (parsed?.rodTipPx?.x != null && parsed?.rodTipPx?.y != null) backgroundAnchors.rodTipPx = parsed.rodTipPx;
+  }
+} catch (e) {}
+
+function saveAnchors() {
+  try {
+    localStorage.setItem(
+      ANCHORS_KEY,
+      JSON.stringify({ floatPx: backgroundAnchors.floatPx, rodTipPx: backgroundAnchors.rodTipPx })
+    );
+  } catch (e) {}
+}
+
+// Тонкая подстройка положения руки и поплавка (в экранных пикселях).
+const HAND_X_OFFSET = 5;
+const HAND_Y_OFFSET = -100;
+const FLOAT_X_OFFSET = 0;
+const FLOAT_Y_OFFSET = 20;
+
+// Якоря внутри СПРАЙТОВ (доли от ширины/высоты изображения).
+// Эти точки должны совпадать с пикселем лунки на фоне.
+// Подстройка, если нужно:
+// - ROD_TIP_U/V: где в спрайте руки находится кончик удочки (выход лески)
+// - FLOAT_U/V: где в спрайте поплавка находится точка, которая должна сидеть в лунке
+const ROD_TIP_U = 0.28;
+const ROD_TIP_V = 0.18;
+const FLOAT_U = 0.50;
+const FLOAT_V = 0.10;
+
+// Режим калибровки: сначала кликаешь по лунке (поплавок), потом по кончику удочки на фоне
+let calibrateMode = false;
+let calibrateStep = 0;
+
+function ensureAnchorPixels() {
+  const bg = images.background;
+  if (!bg || !bg.complete) return;
+  if (!backgroundAnchors.floatPx) {
+    backgroundAnchors.floatPx = {
+      x: bg.width * backgroundAnchors.fallbackU,
+      y: bg.height * backgroundAnchors.fallbackV,
+    };
+  }
+  if (!backgroundAnchors.rodTipPx) {
+    backgroundAnchors.rodTipPx = {
+      x: backgroundAnchors.floatPx.x,
+      y: backgroundAnchors.floatPx.y,
+    };
+  }
+}
+
+function bgPxToScreen(px, py) {
+  // px/py — координаты в background.png
+  const sx = backgroundDraw.dx + (px / backgroundDraw.iw) * backgroundDraw.dw;
+  const sy = backgroundDraw.dy + (py / backgroundDraw.ih) * backgroundDraw.dh;
+  return { x: sx, y: sy };
+}
+
+function screenToBgPx(sx, sy) {
+  const bg = images.background;
+  if (!bg || !bg.complete) return null;
+  const px = ((sx - backgroundDraw.dx) / backgroundDraw.dw) * backgroundDraw.iw;
+  const py = ((sy - backgroundDraw.dy) / backgroundDraw.dh) * backgroundDraw.ih;
+  return { x: px, y: py };
+}
 
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
@@ -139,7 +226,7 @@ function resetGame() {
 function startWaiting() {
   state.phase = PHASE_WAITING;
   state.waitTimer = 0;
-  state.waitDuration = 2 + Math.random() * 4;
+  state.waitDuration = 0.6 + Math.random() * 1.4;
   state.bobberDip = 0;
   spawnUnderwaterFish();
 }
@@ -147,15 +234,15 @@ function startWaiting() {
 function startNibble() {
   state.phase = PHASE_NIBBLE;
   state.nibbleTimer = 0;
-  state.nibbleDuration = 0.3 + Math.random() * 0.3;
+  state.nibbleDuration = 0.15 + Math.random() * 0.25;
   state.nibbleCount = 0;
-  state.nibbleMax = 1 + Math.floor(Math.random() * 3);
+  state.nibbleMax = 1 + Math.floor(Math.random() * 2);
 }
 
 function startBite() {
   state.phase = PHASE_BITE;
   state.biteTimer = 0;
-  state.biteDuration = 0.8 + Math.random() * 0.7;
+  state.biteDuration = 1.0 + Math.random() * 0.6;
 
   const ft = fishTypes[Math.floor(Math.random() * fishTypes.length)];
   state.currentFishType = ft.img;
@@ -269,7 +356,7 @@ function update(dt) {
           startBite();
         } else {
           state.nibbleTimer = 0;
-          state.nibbleDuration = 0.2 + Math.random() * 0.4;
+          state.nibbleDuration = 0.12 + Math.random() * 0.25;
         }
       }
       if (spaceJustPressed) startMissed();
@@ -326,11 +413,14 @@ function drawBackground() {
     const dx = (W - dw) / 2;
     const dy = (H - dh) / 2;
     backgroundRect = { x: dx, y: dy, w: dw, h: dh };
+    backgroundDraw = { dx, dy, dw, dh, iw: bg.width, ih: bg.height };
     ctx.fillStyle = "#0a1520";
     ctx.fillRect(0, 0, W, H);
     ctx.drawImage(bg, dx, dy, dw, dh);
+    ensureAnchorPixels();
   } else {
     backgroundRect = { x: 0, y: 0, w: W, h: H };
+    backgroundDraw = { dx: 0, dy: 0, dw: W, dh: H, iw: 1, ih: 1 };
     const grad = ctx.createLinearGradient(0, 0, 0, H);
     grad.addColorStop(0, "#87CEEB");
     grad.addColorStop(0.35, "#B0D4E8");
@@ -344,8 +434,19 @@ function drawBackground() {
 // Лунку и \"рыбу в лунке\" не рисуем — это уже есть на вашем фоне.
 
 function drawBobber() {
-  const bobX = HOLE_CX;
-  const bobBaseY = HOLE_CY - 2;
+  const bg = images.background;
+  const floatPoint =
+    bg && bg.complete && backgroundAnchors.floatPx
+      ? bgPxToScreen(backgroundAnchors.floatPx.x, backgroundAnchors.floatPx.y)
+      : { x: W * 0.5, y: H * 0.52 };
+
+  const rodTipPoint =
+    bg && bg.complete && backgroundAnchors.rodTipPx
+      ? bgPxToScreen(backgroundAnchors.rodTipPx.x, backgroundAnchors.rodTipPx.y)
+      : { x: floatPoint.x, y: floatPoint.y - 120 };
+
+  const bobX = floatPoint.x + FLOAT_X_OFFSET;
+  const bobBaseY = floatPoint.y + FLOAT_Y_OFFSET;
   const bobY = bobBaseY + state.bobberDip;
 
   ctx.save();
@@ -353,22 +454,25 @@ function drawBobber() {
   ctx.strokeStyle = "rgba(20,20,20,0.45)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(bobX, bobY - 6);
-  ctx.lineTo(bobX, bobY - 30 - (state.phase === PHASE_PULLING ? state.pullProgress * 40 : 0));
+  // от кончика удочки до поплавка
+  const pullUp = state.phase === PHASE_PULLING ? state.pullProgress * 40 : 0;
+  ctx.moveTo(rodTipPoint.x, rodTipPoint.y);
+  ctx.lineTo(bobX, bobY - pullUp);
   ctx.stroke();
 
-  // поплавок-спрайт
+  // поплавок-спрайт (якорим точку FLOAT_U/FLOAT_V к bobX/bobY)
   const img = images.float;
   if (img && img.complete) {
-    const base = Math.min(W, H);
+    // размер поплавка также привязан к масштабу фона
+    const base = Math.min(backgroundRect.w, backgroundRect.h);
     const targetH = base * (0.085 / 3);
     const scale = targetH / img.height;
     const w = img.width * scale;
     const h = img.height * scale;
 
     const wobble = Math.sin(state.bobberWobble * 2.2) * base * 0.0025;
-    const x = bobX - w / 2 + wobble;
-    const y = bobY - h * 0.8 + 80;
+    const x = bobX - w * FLOAT_U + wobble;
+    const y = bobY - h * FLOAT_V;
 
     ctx.drawImage(img, x, y, w, h);
 
@@ -449,26 +553,31 @@ function drawHands() {
   const img = images.handsIdle;
   if (!img || !img.complete) return;
 
-  const targetW = W * 0.45;
+  const bg = images.background;
+  const rodTipPoint =
+    bg && bg.complete && backgroundAnchors.rodTipPx
+      ? bgPxToScreen(backgroundAnchors.rodTipPx.x, backgroundAnchors.rodTipPx.y)
+      : { x: W * 0.5, y: H * 0.52 };
+
+  const base = Math.min(backgroundRect.w, backgroundRect.h);
+  const targetW = base * 0.45;
   const scale = targetW / img.width;
   const w = img.width * scale;
   const h = img.height * scale;
 
   let offsetY = 0;
   if (state.phase === PHASE_PULLING) {
-    offsetY = -state.pullProgress * 30;
+    offsetY = -state.pullProgress * 55;
   } else if (state.phase === PHASE_CAUGHT) {
     offsetY = -30 + Math.min(state.caughtTimer * 20, 30);
   }
 
-  // Кончик удочки в спрайте ~28% от левого края — совмещаем с поплавком (HOLE_CX)
-  const rodTipInSprite = 0.28;
-  const base = Math.min(W, H);
+  // Якорим кончик удочки в спрайте к пикселю на фоне (rodTipPoint)
   const isNibbleOrBite = state.phase === PHASE_NIBBLE || state.phase === PHASE_BITE;
   const wobbleX = isNibbleOrBite ? Math.sin(state.bobberWobble * 2.2) * base * 0.004 : 0;
   const wobbleY = isNibbleOrBite ? Math.sin(state.bobberWobble * 1.8 + 0.5) * 3 : 0;
-  const x = HOLE_CX - w * rodTipInSprite + 15 + wobbleX;
-  const y = H - h + 10 + offsetY + 230 + wobbleY;
+  const x = rodTipPoint.x - w * ROD_TIP_U + HAND_X_OFFSET + wobbleX;
+  const y = rodTipPoint.y - h * ROD_TIP_V + HAND_Y_OFFSET + offsetY + wobbleY;
 
   ctx.save();
   ctx.drawImage(img, x, y, w, h);
@@ -923,6 +1032,27 @@ function isInRect(px, py, rect) {
 function handleClick(e) {
   const pos = getClickPos(e);
 
+  // Калибровка якорей по фону: нажми K, затем кликни по лунке (поплавок),
+  // затем кликни по кончику удочки на фоне.
+  if (calibrateMode) {
+    const bgPt = screenToBgPx(pos.x, pos.y);
+    if (!bgPt) {
+      calibrateMode = false;
+      calibrateStep = 0;
+      return;
+    }
+    if (calibrateStep === 0) {
+      backgroundAnchors.floatPx = bgPt;
+      calibrateStep = 1;
+      return;
+    }
+    backgroundAnchors.rodTipPx = bgPt;
+    saveAnchors();
+    calibrateMode = false;
+    calibrateStep = 0;
+    return;
+  }
+
   if (showInventory) {
     const panelW = Math.min(W * 0.7, 520);
     const panelH = Math.min(H * 0.75, 500);
@@ -1016,6 +1146,10 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.code === "Escape" && showInventory) {
     showInventory = false;
+  }
+  if (e.code === "KeyK") {
+    calibrateMode = true;
+    calibrateStep = 0;
   }
 });
 
