@@ -65,7 +65,7 @@ function saveAnchors() {
 const HAND_X_OFFSET = 5;
 const HAND_Y_OFFSET = -100;
 const FLOAT_X_OFFSET = 0;
-const FLOAT_Y_OFFSET = 20;
+const FLOAT_Y_OFFSET = 40;
 
 // Якоря внутри СПРАЙТОВ (доли от ширины/высоты изображения).
 // Эти точки должны совпадать с пикселем лунки на фоне.
@@ -178,6 +178,7 @@ const state = {
   bobberWobble: 0,
 
   catchCount: 0,
+  level: 0,
 };
 
 const fishTypes = [
@@ -201,6 +202,7 @@ let showInventory = false;
 let inventoryScroll = 0;
 
 let catchBtnRect = { x: 0, y: 0, w: 0, h: 0 };
+let inventoryTouchY = null;
 
 const TOTAL_SCORE_KEY = "winterFishingTotalScore";
 let totalScore = 0;
@@ -211,7 +213,8 @@ try {
 
 function resetGame() {
   state.running = true;
-  state.timeLeft = GAME_TIME;
+  state.level++;
+  state.timeLeft = GAME_TIME + (state.level - 1) * 60;
   state.score = 0;
   state.lastTime = performance.now();
   state.catchCount = 0;
@@ -226,7 +229,7 @@ function resetGame() {
 function startWaiting() {
   state.phase = PHASE_WAITING;
   state.waitTimer = 0;
-  state.waitDuration = 0.6 + Math.random() * 1.4;
+  state.waitDuration = 0.7 + Math.random() * 1.5;
   state.bobberDip = 0;
   spawnUnderwaterFish();
 }
@@ -234,7 +237,7 @@ function startWaiting() {
 function startNibble() {
   state.phase = PHASE_NIBBLE;
   state.nibbleTimer = 0;
-  state.nibbleDuration = 0.15 + Math.random() * 0.25;
+  state.nibbleDuration = 0.18 + Math.random() * 0.22;
   state.nibbleCount = 0;
   state.nibbleMax = 1 + Math.floor(Math.random() * 2);
 }
@@ -242,7 +245,7 @@ function startNibble() {
 function startBite() {
   state.phase = PHASE_BITE;
   state.biteTimer = 0;
-  state.biteDuration = 1.0 + Math.random() * 0.6;
+  state.biteDuration = 1.0 + Math.random() * 0.5;
 
   const ft = fishTypes[Math.floor(Math.random() * fishTypes.length)];
   state.currentFishType = ft.img;
@@ -356,7 +359,7 @@ function update(dt) {
           startBite();
         } else {
           state.nibbleTimer = 0;
-          state.nibbleDuration = 0.12 + Math.random() * 0.25;
+          state.nibbleDuration = 0.12 + Math.random() * 0.28;
         }
       }
       if (spaceJustPressed) startMissed();
@@ -595,6 +598,19 @@ function drawHUD() {
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
 
+  const boxH = fontSize + smallFont + 20;
+  const gap = 10;
+
+  ctx.font = `bold ${smallFont}px system-ui`;
+  const catchText = `🐟 Поймано: ${state.catchCount}`;
+  const cm = ctx.measureText(catchText);
+  const cbW = cm.width + 24;
+  const cbH = smallFont + 12;
+  const cbX = W / 2 - cbW / 2;
+  const cbY = pad;
+  catchBtnRect = { x: cbX, y: cbY, w: cbW, h: cbH };
+
+  ctx.font = `bold ${fontSize}px system-ui`;
   const scoreText = `Очки: ${state.score}`;
   const totalText = `Всего: ${totalScore}`;
   const sm = ctx.measureText(scoreText);
@@ -602,9 +618,8 @@ function drawHUD() {
   const tmTotal = ctx.measureText(totalText);
   ctx.font = `bold ${fontSize}px system-ui`;
   const boxW = Math.max(sm.width, tmTotal.width) + 24;
-  const boxH = fontSize + smallFont + 20;
 
-  const scoreX = pad + 210;
+  const scoreX = Math.max(pad, cbX - gap - boxW);
   ctx.fillStyle = "rgba(0,0,0,0.6)";
   roundRect(ctx, scoreX, pad, boxW, boxH, 10);
   ctx.fill();
@@ -612,10 +627,8 @@ function drawHUD() {
   ctx.lineWidth = 1;
   roundRect(ctx, scoreX, pad, boxW, boxH, 10);
   ctx.stroke();
-
   ctx.fillStyle = "#FFD700";
   ctx.fillText(scoreText, scoreX + 12, pad + 7);
-
   ctx.font = `${smallFont}px system-ui`;
   ctx.fillStyle = "rgba(255,255,255,0.75)";
   ctx.fillText(totalText, scoreX + 12, pad + 7 + fontSize + 6);
@@ -623,49 +636,34 @@ function drawHUD() {
 
   const timeText = `Время: ${Math.max(0, Math.ceil(state.timeLeft))}`;
   const tm = ctx.measureText(timeText);
-
-  const timeX = W - pad - tm.width - 24 - 210;
+  const timeBoxW = tm.width + 24;
+  const timeX = Math.min(W - pad - timeBoxW, cbX + cbW + gap);
   ctx.fillStyle = "rgba(0,0,0,0.6)";
-  roundRect(ctx, timeX, pad, tm.width + 24, boxH, 10);
+  roundRect(ctx, timeX, pad, timeBoxW, boxH, 10);
   ctx.fill();
   ctx.strokeStyle = "rgba(255,255,255,0.25)";
   ctx.lineWidth = 1;
-  roundRect(ctx, timeX, pad, tm.width + 24, boxH, 10);
+  roundRect(ctx, timeX, pad, timeBoxW, boxH, 10);
   ctx.stroke();
-
   const timeColor = state.timeLeft <= 10 ? "#FF4444" : "#FFFFFF";
   ctx.fillStyle = timeColor;
   ctx.textAlign = "right";
   ctx.fillText(timeText, timeX + tm.width + 12, pad + 7);
 
-  if (state.catchCount > 0) {
-    ctx.font = `bold ${smallFont}px system-ui`;
-    ctx.textAlign = "left";
-
-    const catchText = `🐟 Поймано: ${state.catchCount}`;
-    const cm = ctx.measureText(catchText);
-    const cbW = cm.width + 24;
-    const cbH = smallFont + 12;
-    const cbX = W / 2 - cbW / 2;
-    const cbY = pad;
-
-    catchBtnRect = { x: cbX, y: cbY, w: cbW, h: cbH };
-
-    ctx.fillStyle = "rgba(0,0,0,0.6)";
-    roundRect(ctx, cbX, cbY, cbW, cbH, 8);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,207,51,0.5)";
-    ctx.lineWidth = 1;
-    roundRect(ctx, cbX, cbY, cbW, cbH, 8);
-    ctx.stroke();
-
-    ctx.fillStyle = "#FFD700";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(catchText, cbX + cbW / 2, cbY + cbH / 2);
-    ctx.textBaseline = "top";
-    ctx.textAlign = "left";
-  }
+  ctx.font = `bold ${smallFont}px system-ui`;
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  roundRect(ctx, cbX, cbY, cbW, cbH, 8);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,207,51,0.5)";
+  ctx.lineWidth = 1;
+  roundRect(ctx, cbX, cbY, cbW, cbH, 8);
+  ctx.stroke();
+  ctx.fillStyle = "#FFD700";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(catchText, cbX + cbW / 2, cbY + cbH / 2);
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
 
   ctx.restore();
 }
@@ -1065,11 +1063,13 @@ function handleClick(e) {
     if (pos.x >= closeX && pos.x <= closeX + closeBtnSize &&
         pos.y >= closeY && pos.y <= closeY + closeBtnSize) {
       showInventory = false;
+      inventoryTouchY = null;
       return;
     }
     if (pos.x < panelX || pos.x > panelX + panelW ||
         pos.y < panelY || pos.y > panelY + panelH) {
       showInventory = false;
+      inventoryTouchY = null;
     }
     return;
   }
@@ -1119,20 +1119,56 @@ function handleClick(e) {
   spacePressed = true;
 }
 
-canvas.addEventListener("wheel", (e) => {
-  if (!showInventory) return;
-  e.preventDefault();
-
+function getInventoryScrollBounds() {
   const panelW = Math.min(W * 0.7, 520);
   const panelH = Math.min(H * 0.75, 500);
+  const contentTop = 65;
   const contentH = panelH - 85;
   const cols = Math.max(1, Math.floor((panelW - 40) / 130));
   const totalRows = Math.ceil(caughtFishLog.length / cols);
   const totalH = totalRows * 140;
   const maxScroll = Math.max(0, totalH - contentH);
+  const panelX = W / 2 - panelW / 2;
+  const panelY = H / 2 - panelH / 2;
+  return { contentTop: panelY + contentTop, contentH, contentBottom: panelY + panelH - 20, maxScroll, panelX, panelW };
+}
 
+canvas.addEventListener("wheel", (e) => {
+  if (!showInventory) return;
+  e.preventDefault();
+  const { maxScroll } = getInventoryScrollBounds();
   inventoryScroll = Math.max(0, Math.min(maxScroll, inventoryScroll + e.deltaY * 0.5));
 }, { passive: false });
+
+canvas.addEventListener("touchstart", (e) => {
+  if (!showInventory || !e.touches.length) return;
+  const rect = canvas.getBoundingClientRect();
+  const y = e.touches[0].clientY - rect.top;
+  const { contentTop, contentBottom, panelX, panelW } = getInventoryScrollBounds();
+  const x = e.touches[0].clientX - rect.left;
+  if (x >= panelX && x <= panelX + panelW && y >= contentTop && y <= contentBottom) {
+    inventoryTouchY = y;
+  }
+}, { passive: true });
+
+canvas.addEventListener("touchmove", (e) => {
+  if (!showInventory || inventoryTouchY == null || !e.touches.length) return;
+  const rect = canvas.getBoundingClientRect();
+  const y = e.touches[0].clientY - rect.top;
+  const { maxScroll } = getInventoryScrollBounds();
+  const delta = inventoryTouchY - y;
+  inventoryTouchY = y;
+  inventoryScroll = Math.max(0, Math.min(maxScroll, inventoryScroll + delta));
+  e.preventDefault();
+}, { passive: false });
+
+canvas.addEventListener("touchend", (e) => {
+  if (!e.touches.length) inventoryTouchY = null;
+}, { passive: true });
+
+canvas.addEventListener("touchcancel", (e) => {
+  if (!e.touches.length) inventoryTouchY = null;
+}, { passive: true });
 
 window.addEventListener("keydown", (e) => {
   if (e.code === "Space") {
