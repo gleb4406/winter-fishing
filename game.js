@@ -182,15 +182,21 @@ const state = {
 };
 
 const fishTypes = [
-  { name: "Сом",               value: 25, img: 0 },
-  { name: "Окунь",             value: 10, img: 1 },
-  { name: "Большеротый окунь", value: 15, img: 2 },
-  { name: "Судак",             value: 15, img: 3 },
-  { name: "Щука",              value: 20, img: 4 },
-  { name: "Карась",            value: 5,  img: 5 },
-  { name: "Краснопёрка",       value: 5,  img: 6 },
-  { name: "Хариус",            value: 12, img: 7 },
+  { name: "Сом",               nameEn: "Catfish",        value: 25, img: 0 },
+  { name: "Окунь",             nameEn: "Perch",          value: 10, img: 1 },
+  { name: "Большеротый окунь", nameEn: "Largemouth bass", value: 15, img: 2 },
+  { name: "Судак",             nameEn: "Zander",         value: 15, img: 3 },
+  { name: "Щука",              nameEn: "Pike",           value: 20, img: 4 },
+  { name: "Карась",            nameEn: "Crucian carp",  value: 5,  img: 5 },
+  { name: "Краснопёрка",       nameEn: "Rudd",           value: 5,  img: 6 },
+  { name: "Хариус",            nameEn: "Grayling",       value: 12, img: 7 },
 ];
+
+function getFishName(typeIndex) {
+  const ft = fishTypes[typeIndex];
+  if (!ft) return "";
+  return currentLang === "en" ? ft.nameEn : ft.name;
+}
 
 let floatingFishes = [];
 let particles = [];
@@ -203,8 +209,81 @@ let inventoryScroll = 0;
 
 let catchBtnRect = { x: 0, y: 0, w: 0, h: 0 };
 let inventoryTouchY = null;
+let showMenu = false;
+let menuBtnRect = { x: 0, y: 0, w: 0, h: 0 };
+let langEnRect = { x: 0, y: 0, w: 0, h: 0 };
+let langRuRect = { x: 0, y: 0, w: 0, h: 0 };
 
 const TOTAL_SCORE_KEY = "winterFishingTotalScore";
+const LANG_KEY = "winterFishingLang";
+
+const L = {
+  en: {
+    score: "Score",
+    total: "Total",
+    time: "Time",
+    caught: "Caught",
+    yourCatch: "Your catch",
+    nothingYet: "Nothing caught yet",
+    points: "points",
+    title: "Winter Fishing",
+    subtitle: "Wait for a bite — hook in time!",
+    startGame: "Start game",
+    hookHint: "Space / Click — hook",
+    hookHintShort: "[ Space ] or [ Click ] — hook",
+    gameOver: "Game over",
+    fishCaught: "Fish caught",
+    viewCatch: "View catch",
+    playAgain: "Play again",
+    waitBite: "Waiting for a bite...",
+    nibble: "Something's biting...",
+    biteNow: "BITE! Press SPACE!",
+    pulling: "Pulling!",
+    missed: "Got away...",
+    menu: "Menu",
+    language: "Language",
+    english: "English",
+    russian: "Русский",
+  },
+  ru: {
+    score: "Очки",
+    total: "Всего",
+    time: "Время",
+    caught: "Поймано",
+    yourCatch: "Ваш улов",
+    nothingYet: "Пока ничего не поймано",
+    points: "очков",
+    title: "Зимняя рыбалка",
+    subtitle: "Жди поклёвку — подсекай вовремя!",
+    startGame: "Начать игру",
+    hookHint: "Space / Клик — подсечка",
+    hookHintShort: "[ Space ]  или  [ Клик ] — подсечка",
+    gameOver: "Игра окончена",
+    fishCaught: "Поймано рыб",
+    viewCatch: "Посмотреть улов",
+    playAgain: "Играть ещё",
+    waitBite: "Ждём поклёвку...",
+    nibble: "Что-то клюёт...",
+    biteNow: "КЛЮЁТ! Жми ПРОБЕЛ!",
+    pulling: "Тянем!",
+    missed: "Сорвалась...",
+    menu: "Меню",
+    language: "Язык",
+    english: "English",
+    russian: "Русский",
+  },
+};
+
+let currentLang = "en";
+try {
+  const saved = localStorage.getItem(LANG_KEY);
+  if (saved === "en" || saved === "ru") currentLang = saved;
+} catch (e) {}
+
+function t(key) {
+  return (L[currentLang] && L[currentLang][key]) || L.ru[key] || key;
+}
+
 let totalScore = 0;
 try {
   const saved = localStorage.getItem(TOTAL_SCORE_KEY);
@@ -250,7 +329,7 @@ function startBite() {
   const ft = fishTypes[Math.floor(Math.random() * fishTypes.length)];
   state.currentFishType = ft.img;
   state.currentFishValue = ft.value;
-  state.currentFishName = ft.name;
+  state.currentFishName = getFishName(ft.img);
 }
 
 function startPulling() {
@@ -267,7 +346,7 @@ function startCaught() {
   state.catchCount++;
 
   caughtFishLog.push({
-    name: state.currentFishName,
+    name: getFishName(state.currentFishType),
     value: state.currentFishValue,
     imgIndex: state.currentFishType,
   });
@@ -311,7 +390,7 @@ function spawnUnderwaterFish() {
 }
 
 function update(dt) {
-  if (showInventory) return;
+  if (showInventory || showMenu) return;
   if (!state.running) return;
 
   state.timeLeft -= dt;
@@ -534,8 +613,9 @@ function drawCaughtFish() {
   ctx.strokeStyle = "rgba(0,0,0,0.6)";
   ctx.lineWidth = 3;
   const textY = state.caughtY - h / 2 - 15;
-  ctx.strokeText(`${state.currentFishName} +${state.currentFishValue}`, HOLE_CX, textY);
-  ctx.fillText(`${state.currentFishName} +${state.currentFishValue}`, HOLE_CX, textY);
+  const nameStr = getFishName(state.currentFishType) + " +" + state.currentFishValue;
+  ctx.strokeText(nameStr, HOLE_CX, textY);
+  ctx.fillText(nameStr, HOLE_CX, textY);
   ctx.restore();
 }
 
@@ -602,7 +682,7 @@ function drawHUD() {
   const gap = 10;
 
   ctx.font = `bold ${smallFont}px system-ui`;
-  const catchText = `🐟 Поймано: ${state.catchCount}`;
+  const catchText = `🐟 ${t("caught")}: ${state.catchCount}`;
   const cm = ctx.measureText(catchText);
   const cbW = cm.width + 24;
   const cbH = smallFont + 12;
@@ -611,8 +691,8 @@ function drawHUD() {
   catchBtnRect = { x: cbX, y: cbY, w: cbW, h: cbH };
 
   ctx.font = `bold ${fontSize}px system-ui`;
-  const scoreText = `Очки: ${state.score}`;
-  const totalText = `Всего: ${totalScore}`;
+  const scoreText = `${t("score")}: ${state.score}`;
+  const totalText = `${t("total")}: ${totalScore}`;
   const sm = ctx.measureText(scoreText);
   ctx.font = `${smallFont}px system-ui`;
   const tmTotal = ctx.measureText(totalText);
@@ -634,7 +714,7 @@ function drawHUD() {
   ctx.fillText(totalText, scoreX + 12, pad + 7 + fontSize + 6);
   ctx.font = `bold ${fontSize}px system-ui`;
 
-  const timeText = `Время: ${Math.max(0, Math.ceil(state.timeLeft))}`;
+  const timeText = `${t("time")}: ${Math.max(0, Math.ceil(state.timeLeft))}`;
   const tm = ctx.measureText(timeText);
   const timeBoxW = tm.width + 24;
   const timeX = Math.min(W - pad - timeBoxW, cbX + cbW + gap);
@@ -676,12 +756,12 @@ function drawControlsHint() {
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
 
-  const text = "[ Space ]  или  [ Клик ] — подсечка";
+  const text = t("hookHintShort");
   const tw = ctx.measureText(text).width;
   const bw = tw + 32;
   const bh = fontSize + 14;
   const bx = W / 2 - bw / 2;
-  const by = H - 12 - bh;
+  const by = H - 12 - bh - 44;
 
   ctx.fillStyle = "rgba(0,0,0,0.35)";
   roundRect(ctx, bx, by, bw, bh, 8);
@@ -690,6 +770,84 @@ function drawControlsHint() {
   ctx.fillStyle = "rgba(200,220,240,0.55)";
   ctx.textBaseline = "middle";
   ctx.fillText(text, W / 2, by + bh / 2);
+
+  const menuBtnH = 40;
+  const menuBtnW = Math.max(120, ctx.measureText(t("menu")).width + 32);
+  const menuBtnX = W / 2 - menuBtnW / 2;
+  const menuBtnY = H - 14 - menuBtnH;
+  menuBtnRect = { x: menuBtnX, y: menuBtnY, w: menuBtnW, h: menuBtnH };
+
+  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  roundRect(ctx, menuBtnX, menuBtnY, menuBtnW, menuBtnH, 10);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.2)";
+  ctx.lineWidth = 1;
+  roundRect(ctx, menuBtnX, menuBtnY, menuBtnW, menuBtnH, 10);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(220,235,250,0.9)";
+  ctx.font = `bold ${Math.round(fontSize * 1.1)}px system-ui`;
+  ctx.fillText(t("menu"), W / 2, menuBtnY + menuBtnH / 2);
+
+  ctx.restore();
+}
+
+function drawMenu() {
+  if (!showMenu) return;
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(0, 0, W, H);
+
+  const panelW = Math.min(W * 0.85, 320);
+  const panelH = 180;
+  const panelX = W / 2 - panelW / 2;
+  const panelY = H / 2 - panelH / 2;
+
+  ctx.fillStyle = "rgba(6, 21, 34, 0.95)";
+  ctx.strokeStyle = "rgba(163, 210, 255, 0.5)";
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, panelX, panelY, panelW, panelH, 16);
+  ctx.fill();
+  ctx.stroke();
+
+  const titleSize = Math.round(Math.min(W, H) * 0.032);
+  const btnH = 44;
+  const pad = 20;
+  ctx.font = `bold ${titleSize}px system-ui`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#FFD700";
+  ctx.fillText(t("language"), W / 2, panelY + pad + titleSize / 2);
+
+  const btnY = panelY + 55;
+  const btnW = panelW - pad * 2;
+  const enX = panelX + pad;
+  const ruX = panelX + pad;
+  const enY = btnY;
+  const ruY = btnY + btnH + 12;
+
+  langEnRect = { x: enX, y: enY, w: btnW, h: btnH };
+  langRuRect = { x: ruX, y: ruY, w: btnW, h: btnH };
+
+  ctx.fillStyle = currentLang === "en" ? "rgba(255,207,51,0.35)" : "rgba(255,255,255,0.1)";
+  roundRect(ctx, enX, enY, btnW, btnH, 10);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,207,51,0.5)";
+  ctx.lineWidth = 1;
+  roundRect(ctx, enX, enY, btnW, btnH, 10);
+  ctx.stroke();
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = `bold ${Math.round(titleSize * 0.9)}px system-ui`;
+  ctx.fillText(t("english"), enX + btnW / 2, enY + btnH / 2);
+
+  ctx.fillStyle = currentLang === "ru" ? "rgba(255,207,51,0.35)" : "rgba(255,255,255,0.1)";
+  roundRect(ctx, ruX, ruY, btnW, btnH, 10);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,207,51,0.5)";
+  ctx.lineWidth = 1;
+  roundRect(ctx, ruX, ruY, btnW, btnH, 10);
+  ctx.stroke();
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillText(t("russian"), ruX + btnW / 2, ruY + btnH / 2);
 
   ctx.restore();
 }
@@ -700,23 +858,23 @@ function drawStatusText() {
 
   switch (state.phase) {
     case PHASE_WAITING:
-      text = "Ждём поклёвку...";
+      text = t("waitBite");
       color = "rgba(200,220,240,0.6)";
       break;
     case PHASE_NIBBLE:
-      text = "Что-то клюёт...";
+      text = t("nibble");
       color = "#FFD080";
       break;
     case PHASE_BITE:
-      text = "КЛЮЁТ! Жми ПРОБЕЛ!";
+      text = t("biteNow");
       color = "#FF4444";
       break;
     case PHASE_PULLING:
-      text = "Тянем!";
+      text = t("pulling");
       color = "#66DD66";
       break;
     case PHASE_MISSED:
-      text = "Сорвалась...";
+      text = t("missed");
       color = "#FF8888";
       break;
   }
@@ -770,7 +928,7 @@ function drawInventory() {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#FFD700";
-  ctx.fillText("Ваш улов", W / 2, panelY + 34);
+  ctx.fillText(t("yourCatch"), W / 2, panelY + 34);
 
   const closeBtnSize = 30;
   const closeX = panelX + panelW - 20 - closeBtnSize;
@@ -786,7 +944,7 @@ function drawInventory() {
   if (caughtFishLog.length === 0) {
     ctx.font = `${itemFont}px system-ui`;
     ctx.fillStyle = "rgba(200,220,240,0.5)";
-    ctx.fillText("Пока ничего не поймано", W / 2, H / 2);
+    ctx.fillText(t("nothingYet"), W / 2, H / 2);
     ctx.restore();
     return;
   }
@@ -832,11 +990,11 @@ function drawInventory() {
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
     ctx.fillStyle = "#FFFFFF";
-    ctx.fillText(fish.name, cx, cy + cellH / 2 - 20);
+    ctx.fillText(getFishName(fish.imgIndex), cx, cy + cellH / 2 - 20);
 
     ctx.font = `${Math.round(itemFont * 0.75)}px system-ui`;
     ctx.fillStyle = "#FFD700";
-    ctx.fillText(`+${fish.value} очков`, cx, cy + cellH / 2 - 4);
+    ctx.fillText(`+${fish.value} ${t("points")}`, cx, cy + cellH / 2 - 4);
   }
 
   ctx.restore();
@@ -872,12 +1030,12 @@ function drawStartScreen() {
   ctx.fillStyle = "#FFD700";
   ctx.strokeStyle = "rgba(0,0,0,0.5)";
   ctx.lineWidth = 4;
-  ctx.strokeText("Зимняя рыбалка", W / 2, H * 0.3);
-  ctx.fillText("Зимняя рыбалка", W / 2, H * 0.3);
+  ctx.strokeText(t("title"), W / 2, H * 0.3);
+  ctx.fillText(t("title"), W / 2, H * 0.3);
 
   ctx.font = `${subSize}px system-ui`;
   ctx.fillStyle = "rgba(220,235,250,0.7)";
-  ctx.fillText("Жди поклёвку — подсекай вовремя!", W / 2, H * 0.42);
+  ctx.fillText(t("subtitle"), W / 2, H * 0.42);
 
   const btnW = Math.min(W * 0.35, 260);
   const btnH = btnSize + 24;
@@ -890,11 +1048,11 @@ function drawStartScreen() {
 
   ctx.fillStyle = "#221200";
   ctx.font = `bold ${btnSize}px system-ui`;
-  ctx.fillText("Начать игру", W / 2, btnY + btnH / 2);
+  ctx.fillText(t("startGame"), W / 2, btnY + btnH / 2);
 
   ctx.font = `${Math.round(subSize * 0.85)}px system-ui`;
   ctx.fillStyle = "rgba(200,220,240,0.5)";
-  ctx.fillText("Space / Клик — подсечка", W / 2, H * 0.72);
+  ctx.fillText(t("hookHint"), W / 2, H * 0.72);
 
   ctx.restore();
 }
@@ -924,15 +1082,15 @@ function drawGameOverScreen() {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#FFFFFF";
-  ctx.fillText("Игра окончена", W / 2, panelY + panelH * 0.17);
+  ctx.fillText(t("gameOver"), W / 2, panelY + panelH * 0.17);
 
   ctx.font = `${scoreSize}px system-ui`;
   ctx.fillStyle = "#FFD700";
-  ctx.fillText(`${state.score} очков`, W / 2, panelY + panelH * 0.35);
+  ctx.fillText(`${state.score} ${t("points")}`, W / 2, panelY + panelH * 0.35);
 
   ctx.font = `${Math.round(scoreSize * 0.7)}px system-ui`;
   ctx.fillStyle = "rgba(200,220,240,0.6)";
-  ctx.fillText(`Поймано рыб: ${state.catchCount}`, W / 2, panelY + panelH * 0.48);
+  ctx.fillText(`${t("fishCaught")}: ${state.catchCount}`, W / 2, panelY + panelH * 0.48);
 
   const fishBtnW = Math.min(panelW * 0.55, 190);
   const fishBtnH = btnSize + 16;
@@ -948,7 +1106,7 @@ function drawGameOverScreen() {
 
   ctx.font = `bold ${Math.round(btnSize * 0.85)}px system-ui`;
   ctx.fillStyle = "#FFD700";
-  ctx.fillText("Посмотреть улов", W / 2, fishBtnY + fishBtnH / 2);
+  ctx.fillText(t("viewCatch"), W / 2, fishBtnY + fishBtnH / 2);
 
   const btnW = Math.min(panelW * 0.55, 190);
   const btnH = btnSize + 20;
@@ -961,7 +1119,7 @@ function drawGameOverScreen() {
 
   ctx.fillStyle = "#221200";
   ctx.font = `bold ${btnSize}px system-ui`;
-  ctx.fillText("Играть ещё", W / 2, btnY + btnH / 2);
+  ctx.fillText(t("playAgain"), W / 2, btnY + btnH / 2);
 
   ctx.restore();
 }
@@ -985,24 +1143,22 @@ function render() {
 
   if (state.phase === PHASE_START) {
     drawStartScreen();
-    return;
+  } else {
+    drawBackground();
+    drawBobber();
+    drawFishBeingPulled();
+    drawParticles();
+    drawCaughtFish();
+    drawHands();
+    drawHUD();
+    drawStatusText();
+    if (state.phase === PHASE_GAMEOVER) drawGameOverScreen();
   }
 
-  drawBackground();
-  drawBobber();
-  drawFishBeingPulled();
-  drawParticles();
-  drawCaughtFish();
-  drawHands();
-  drawHUD();
-  drawStatusText();
-  drawControlsHint();
-
-  if (state.phase === PHASE_GAMEOVER) {
-    drawGameOverScreen();
-  }
-
-  if (showInventory) {
+  if (!showInventory) {
+    drawControlsHint();
+    if (showMenu) drawMenu();
+  } else {
     drawInventory();
   }
 }
@@ -1027,8 +1183,42 @@ function isInRect(px, py, rect) {
   return px >= rect.x && px <= rect.x + rect.w && py >= rect.y && py <= rect.y + rect.h;
 }
 
+function setLang(lang) {
+  currentLang = lang;
+  try {
+    localStorage.setItem(LANG_KEY, lang);
+  } catch (err) {}
+  document.title = currentLang === "en" ? "Winter Fishing" : "Зимняя рыбалка";
+}
+
 function handleClick(e) {
   const pos = getClickPos(e);
+
+  if (showMenu) {
+    if (isInRect(pos.x, pos.y, langEnRect)) {
+      setLang("en");
+      showMenu = false;
+      return;
+    }
+    if (isInRect(pos.x, pos.y, langRuRect)) {
+      setLang("ru");
+      showMenu = false;
+      return;
+    }
+    const panelW = Math.min(W * 0.85, 320);
+    const panelH = 180;
+    const panelX = W / 2 - panelW / 2;
+    const panelY = H / 2 - panelH / 2;
+    if (pos.x < panelX || pos.x > panelX + panelW || pos.y < panelY || pos.y > panelY + panelH) {
+      showMenu = false;
+    }
+    return;
+  }
+
+  if (!showInventory && isInRect(pos.x, pos.y, menuBtnRect)) {
+    showMenu = true;
+    return;
+  }
 
   // Калибровка якорей по фону: нажми K, затем кликни по лунке (поплавок),
   // затем кликни по кончику удочки на фоне.
@@ -1180,8 +1370,9 @@ window.addEventListener("keydown", (e) => {
     }
     spacePressed = true;
   }
-  if (e.code === "Escape" && showInventory) {
-    showInventory = false;
+  if (e.code === "Escape") {
+    if (showInventory) showInventory = false;
+    else if (showMenu) showMenu = false;
   }
   if (e.code === "KeyK") {
     calibrateMode = true;
@@ -1196,5 +1387,6 @@ window.addEventListener("keyup", (e) => {
 canvas.addEventListener("pointerdown", handleClick);
 canvas.addEventListener("pointerup", () => { spacePressed = false; });
 
+document.title = currentLang === "en" ? "Winter Fishing" : "Зимняя рыбалка";
 state.lastTime = performance.now();
 requestAnimationFrame(loop);
